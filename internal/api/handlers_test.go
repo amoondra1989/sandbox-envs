@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -167,5 +168,54 @@ func TestHandleHealthServiceUnavailable(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("code=%d", rec.Code)
+	}
+}
+
+func TestHandleExecRejectRelativeCwd(t *testing.T) {
+	h := NewServer(&stubBackend{})
+	body := `{"command":"pwd","opts":{"cwd":"relative"}}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/sandboxes/x/exec", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleExecRejectTraversalCwd(t *testing.T) {
+	h := NewServer(&stubBackend{})
+	body := `{"command":"pwd","opts":{"cwd":"/tmp/../etc"}}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/sandboxes/x/exec", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleExecInvalidWorkingDirectoryFromBackend(t *testing.T) {
+	errBE := fmt.Errorf("%w: not a dir", sandbox.ErrInvalidExecWorkingDir)
+	h := NewServer(&stubBackend{execErr: errBE})
+	body := `{"command":"pwd","opts":{"cwd":"/workspace"}}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/sandboxes/x/exec", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleExecLegacyWorkingDirJSONStillAccepted(t *testing.T) {
+	h := NewServer(&stubBackend{execRes: &sandboxclient.ExecResult{ExitCode: 0, Stdout: []byte("ok")}})
+	body := `{"command":"pwd","opts":{"working_dir":"/workspace"}}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/sandboxes/x/exec", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
 	}
 }

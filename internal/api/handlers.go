@@ -89,9 +89,18 @@ func (s *Server) handleExec(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "command is required")
 		return
 	}
+	wd := sandbox.EffectiveWorkingDir(req.Opts)
+	if err := sandbox.ValidateExecWorkingDirSyntax(wd); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	res, err := s.Backend.Exec(r.Context(), id, req.Command, req.Opts)
 	if errors.Is(err, sandbox.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "sandbox not found")
+		return
+	}
+	if errors.Is(err, sandbox.ErrInvalidExecWorkingDir) {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err != nil {

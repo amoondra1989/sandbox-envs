@@ -1,11 +1,15 @@
+// sandboxclient is the public HTTP client for the sandbox-envs REST API.
 package sandboxclient
 
 // CreateOptions configures sandbox creation. Image is chosen by the server (fixed image).
 type CreateOptions struct{}
 
 // ExecOptions configures synchronous exec inside a sandbox.
+// Cwd sets the process working directory when non-empty (JSON key "cwd").
+// WorkingDir is a legacy alias with the same meaning (JSON "working_dir"); if both are set, Cwd wins.
 type ExecOptions struct {
 	TimeoutSeconds int               `json:"timeout_seconds,omitempty"`
+	Cwd            string            `json:"cwd,omitempty"`
 	WorkingDir     string            `json:"working_dir,omitempty"`
 	Env            map[string]string `json:"env,omitempty"`
 }

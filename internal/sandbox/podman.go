@@ -141,13 +141,22 @@ func (p *PodmanSandbox) Exec(ctx context.Context, sandboxID string, command stri
 	if err != nil {
 		return nil, err
 	}
+	wd := EffectiveWorkingDir(opts)
+	if err := ValidateExecWorkingDirSyntax(wd); err != nil {
+		return nil, err
+	}
+	if wd != "" {
+		if err := p.verifyExecWorkingDir(ctx, name, wd); err != nil {
+			return nil, err
+		}
+	}
 	if opts.TimeoutSeconds > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(opts.TimeoutSeconds)*time.Second)
 		defer cancel()
 	}
 	args := []string{"exec"}
-	if wd := strings.TrimSpace(opts.WorkingDir); wd != "" {
+	if wd != "" {
 		args = append(args, "--workdir", wd)
 	}
 	for k, v := range opts.Env {
@@ -164,6 +173,21 @@ func (p *PodmanSandbox) Exec(ctx context.Context, sandboxID string, command stri
 		Stdout:   append([]byte(nil), stdout...),
 		Stderr:   append([]byte(nil), stderr...),
 	}, nil
+}
+
+func (p *PodmanSandbox) verifyExecWorkingDir(ctx context.Context, containerName, dir string) error {
+	_, stderr, code, runErr := p.RunCmd.Run(ctx, p.PodmanBin, "exec", containerName, "test", "-d", dir)
+	if runErr != nil {
+		return fmt.Errorf("%w: verify working directory: %v", ErrInvalidExecWorkingDir, runErr)
+	}
+	if code != 0 {
+		msg := strings.TrimSpace(string(stderr))
+		if msg != "" {
+			return fmt.Errorf("%w: working directory does not exist or is not a directory: %s (%s)", ErrInvalidExecWorkingDir, dir, msg)
+		}
+		return fmt.Errorf("%w: working directory does not exist or is not a directory: %s", ErrInvalidExecWorkingDir, dir)
+	}
+	return nil
 }
 
 // ReadFile implements Sandbox.

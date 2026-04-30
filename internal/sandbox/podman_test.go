@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -9,8 +10,9 @@ import (
 )
 
 type fakeRunner struct {
-	t        *testing.T
-	commands [][]string
+	t         *testing.T
+	commands  [][]string
+	failTestD map[string]bool // paths where test -d should fail (exit 1)
 }
 
 func (f *fakeRunner) Run(ctx context.Context, bin string, args ...string) ([]byte, []byte, int, error) {
@@ -25,6 +27,13 @@ func (f *fakeRunner) Run(ctx context.Context, bin string, args ...string) ([]byt
 	case "rm":
 		return nil, nil, 0, nil
 	case "exec":
+		if len(args) >= 5 && args[2] == "test" && args[3] == "-d" {
+			dir := args[4]
+			if f.failTestD != nil && f.failTestD[dir] {
+				return nil, []byte("not a directory"), 1, nil
+			}
+			return nil, nil, 0, nil
+		}
 		return []byte("out"), nil, 0, nil
 	case "cp":
 		return nil, nil, 0, nil
@@ -76,6 +85,46 @@ func TestValidateSandboxPath(t *testing.T) {
 	}
 	if err := validateSandboxPath("/bad/../x"); err == nil {
 		t.Fatal("expected err")
+	}
+}
+
+func TestPodmanExecWorkingDirProbeAndFlag(t *testing.T) {
+	fr := &fakeRunner{t: t}
+	p := NewPodman("img:1", fr)
+	p.PodmanBin = "podman"
+	id, err := p.Create(context.Background(), sandboxclient.CreateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Exec(context.Background(), id, "true", sandboxclient.ExecOptions{Cwd: "/workspace"}); err != nil {
+		t.Fatal(err)
+	}
+	var sawProbe, sawMain bool
+	for _, c := range fr.commands {
+		s := strings.Join(c, " ")
+		if strings.Contains(s, "test -d /workspace") {
+			sawProbe = true
+		}
+		if strings.Contains(s, "--workdir") && strings.Contains(s, "/workspace") {
+			sawMain = true
+		}
+	}
+	if !sawProbe || !sawMain {
+		t.Fatalf("probe=%v main=%v commands=%v", sawProbe, sawMain, fr.commands)
+	}
+}
+
+func TestPodmanExecWorkingDirRejectMissingDir(t *testing.T) {
+	fr := &fakeRunner{t: t, failTestD: map[string]bool{"/gone": true}}
+	p := NewPodman("img:1", fr)
+	p.PodmanBin = "podman"
+	id, err := p.Create(context.Background(), sandboxclient.CreateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = p.Exec(context.Background(), id, "true", sandboxclient.ExecOptions{Cwd: "/gone"})
+	if err == nil || !errors.Is(err, ErrInvalidExecWorkingDir) {
+		t.Fatalf("want ErrInvalidExecWorkingDir got %v", err)
 	}
 }
 

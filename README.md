@@ -60,13 +60,16 @@ Base path: **`/v1`**. Request/response bodies use JSON unless noted.
 | `POST` | `/v1/sandboxes` | `{ }` — [`sandboxclient.CreateOptions`](pkg/sandboxclient/types.go) | **201** JSON `{"sandbox_id":"..."}` |
 | `DELETE` | `/v1/sandboxes/{id}` | — | **204** |
 | `POST` | `/v1/sandboxes/{id}/exec` | [`sandboxclient.ExecRequest`](pkg/sandboxclient/types.go) (`command`, optional `opts`) | **200** [`ExecResult`](pkg/sandboxclient/types.go) |
+
+**Exec `opts`:** optional **`cwd`** sets the working directory for `command`. **`working_dir`** is a legacy alias; if both are non-empty, **`cwd` wins**. Omit both (or use empty strings) for backward-compatible behavior (image default, typically **`/workspace`**). Non-empty **`cwd`**: must be absolute, no **`..`**, and must exist as a directory inside the container → otherwise **400**.
+
 | `GET` | `/v1/sandboxes/{id}/file?path=/abs/path` | — | **200** raw **`application/octet-stream`** |
 | `PUT` | `/v1/sandboxes/{id}/file?path=/abs/path` | raw octets (`application/octet-stream`) | **204** |
 | `GET` | `/v1/sandboxes/{id}/health` | — | **204** |
 
 Path rules for file APIs: **`path` must be absolute** (`/`…) and must **not** contain `..`.
 
-Errors return JSON `{"error":"..."}` with appropriate status (e.g. **404** unknown sandbox, **400** bad path/body, **503** unhealthy).
+Errors return JSON `{"error":"..."}` with appropriate status (e.g. **404** unknown sandbox, **400** bad path/body/**cwd**, **503** unhealthy).
 
 ---
 
