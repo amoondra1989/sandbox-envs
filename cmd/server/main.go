@@ -12,7 +12,7 @@ import (
 func main() {
 	addr := os.Getenv("SANDBOX_LISTEN")
 	if addr == "" {
-		addr = "127.0.0.1:8080"
+		addr = "127.0.0.1:8088"
 	}
 
 	backend := sandbox.NewPodman("", nil)

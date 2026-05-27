@@ -25,11 +25,13 @@ Sandbox IDs and container mappings live **only in process memory**. Restarting t
 
 ### 1. Build the sandbox runtime image
 
-From the repo root:
+From the repo root (downloads Go/Java/Maven/Gradle via [mise](https://mise.jdx.dev); needs network):
 
 ```bash
 podman build -t sandbox-env:latest .
 ```
+
+Toolchain versions are declared in [`docker/sandbox-tools.toml`](docker/sandbox-tools.toml). Edit that file and rebuild to add or bump versions.
 
 ### 2. (Optional) Override image or Podman binary
 
@@ -75,7 +77,23 @@ Errors return JSON `{"error":"..."}` with appropriate status (e.g. **404** unkno
 
 ## Capabilities inside the sandbox
 
-The stock `Dockerfile` installs **Python 3**, **curl**, **wget**, **git**, and CA certs so typical scripts and outbound HTTPS/Git operations work over Podman’s default networking.
+The image is **`debian:bookworm-slim`** plus **[mise](https://mise.jdx.dev)** for polyglot toolchains (not a single upstream “batteries-included” base — those images are usually huge and still ship only one Java/Go version).
+
+**Preinstalled (defaults on `PATH`):** Go **1.23.6**, Temurin **26**, Maven **3.9.9**, Gradle **8.12.1**. Also installed for `mise exec`: Go **1.22.12**; Temurin **11**, **17**, **21**, and **24**. Plus **Python 3**, **curl**, **wget**, **git**, **build-essential** (cgo/native builds), CA certs.
+
+Installing Java 26 does **not** replace older JDKs — they are installed side by side. Use `java -version` for the default, or `mise exec java@temurin-24.0.0 -- …` / Gradle **toolchains** for per-project versions.
+
+**Use a different Go/Java version in one exec** (no image rebuild):
+
+```bash
+# via API / sandboxclient — command examples inside the container:
+mise exec go@1.22.12 -- go test ./...
+mise exec java@temurin-17.0.14 -- mvn -q test
+```
+
+Projects with **`.mise.toml`** / **`./gradlew`** / **`./mvnw`** can pin versions in-repo; mise will respect project config when run from that directory.
+
+Rebuild after changing [`Dockerfile`](Dockerfile) or [`docker/sandbox-tools.toml`](docker/sandbox-tools.toml).
 
 ---
 
