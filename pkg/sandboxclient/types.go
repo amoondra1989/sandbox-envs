@@ -2,7 +2,24 @@
 package sandboxclient
 
 // CreateOptions configures sandbox creation. Image is chosen by the server (fixed image).
-type CreateOptions struct{}
+type CreateOptions struct {
+	// MountContainerSocket mounts the host Podman/Docker API socket so tools (Testcontainers,
+	// dockertest, etc.) can start sibling containers. Defaults to true when omitted.
+	MountContainerSocket *bool `json:"mount_container_socket,omitempty"`
+}
+
+// MountContainerSocketEnabled reports whether the runtime socket should be mounted (default true).
+func (o CreateOptions) MountContainerSocketEnabled() bool {
+	if o.MountContainerSocket != nil {
+		return *o.MountContainerSocket
+	}
+	return true
+}
+
+// Bool is a helper for optional *bool fields in CreateOptions.
+func Bool(v bool) *bool {
+	return &v
+}
 
 // ExecOptions configures synchronous exec inside a sandbox.
 // Cwd sets the process working directory when non-empty (JSON key "cwd").

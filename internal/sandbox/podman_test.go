@@ -3,6 +3,10 @@ package sandbox
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -39,6 +43,8 @@ func (f *fakeRunner) Run(ctx context.Context, bin string, args ...string) ([]byt
 		return nil, nil, 0, nil
 	case "inspect":
 		return []byte("true\n"), nil, 0, nil
+	case "info":
+		return []byte("unix:///tmp/detected-podman.sock\n"), nil, 0, nil
 	default:
 		f.t.Fatalf("unexpected podman args: %v", args)
 		return nil, nil, -1, nil
@@ -50,7 +56,7 @@ func TestPodmanCreateAndDestroy(t *testing.T) {
 	p := NewPodman("myimage:latest", fr)
 	p.PodmanBin = "podman"
 	ctx := context.Background()
-	id, err := p.Create(ctx, sandboxclient.CreateOptions{})
+	id, err := p.Create(ctx, sandboxclient.CreateOptions{MountContainerSocket: sandboxclient.Bool(false)})
 	if err != nil || id == "" {
 		t.Fatalf("create: %v id=%q", err, id)
 	}
@@ -92,7 +98,7 @@ func TestPodmanExecWorkingDirProbeAndFlag(t *testing.T) {
 	fr := &fakeRunner{t: t}
 	p := NewPodman("img:1", fr)
 	p.PodmanBin = "podman"
-	id, err := p.Create(context.Background(), sandboxclient.CreateOptions{})
+	id, err := p.Create(context.Background(), sandboxclient.CreateOptions{MountContainerSocket: sandboxclient.Bool(false)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +124,7 @@ func TestPodmanExecWorkingDirRejectMissingDir(t *testing.T) {
 	fr := &fakeRunner{t: t, failTestD: map[string]bool{"/gone": true}}
 	p := NewPodman("img:1", fr)
 	p.PodmanBin = "podman"
-	id, err := p.Create(context.Background(), sandboxclient.CreateOptions{})
+	id, err := p.Create(context.Background(), sandboxclient.CreateOptions{MountContainerSocket: sandboxclient.Bool(false)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,11 +134,52 @@ func TestPodmanExecWorkingDirRejectMissingDir(t *testing.T) {
 	}
 }
 
+func TestPodmanCreateWithContainerSocket(t *testing.T) {
+	fr := &fakeRunner{t: t}
+	p := NewPodman("img:1", fr)
+	p.PodmanBin = "podman"
+	sock := fmt.Sprintf("/tmp/sandbox-envs-%d.sock", os.Getpid())
+	_ = os.Remove(sock)
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = ln.Close()
+		_ = os.Remove(sock)
+	})
+	p.ContainerSocket = sock
+
+	id, err := p.Create(context.Background(), sandboxclient.CreateOptions{})
+	if err != nil || id == "" {
+		t.Fatalf("create: %v id=%q", err, id)
+	}
+	run := strings.Join(fr.commands[0], " ")
+	if !strings.Contains(run, "-v "+sock+":/var/run/docker.sock:ro") {
+		t.Fatalf("missing socket mount: %s", run)
+	}
+	if !strings.Contains(run, "TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock") {
+		t.Fatalf("missing container socket env: %s", run)
+	}
+}
+
+func TestPodmanCreateContainerSocketRequiresSocket(t *testing.T) {
+	fr := &fakeRunner{t: t}
+	p := NewPodman("img:1", fr)
+	p.PodmanBin = "podman"
+	p.ContainerSocket = filepath.Join(t.TempDir(), "missing.sock")
+
+	_, err := p.Create(context.Background(), sandboxclient.CreateOptions{})
+	if err == nil || !errors.Is(err, ErrContainerSocketUnavailable) {
+		t.Fatalf("want ErrContainerSocketUnavailable got %v", err)
+	}
+}
+
 func TestPodmanCreateRunArgs(t *testing.T) {
 	fr := &fakeRunner{t: t}
 	p := NewPodman("img:1", fr)
 	p.PodmanBin = "podman"
-	id, err := p.Create(context.Background(), sandboxclient.CreateOptions{})
+	id, err := p.Create(context.Background(), sandboxclient.CreateOptions{MountContainerSocket: sandboxclient.Bool(false)})
 	if err != nil {
 		t.Fatal(err)
 	}

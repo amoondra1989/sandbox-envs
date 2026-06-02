@@ -37,7 +37,7 @@ COPY docker/sandbox-tools.toml /etc/mise/config.toml
 
 RUN set -eux; \
     mise install; \
-    mise use -g go@1.23.6 java@temurin-26.0.0 maven@3.9.9 gradle@8.12.1; \
+    mise use -g go@1.23.6 java@temurin-26.0.0 maven@3.9.9 gradle@9.5.1; \
     go version; \
     java -version; \
     mvn -version; \

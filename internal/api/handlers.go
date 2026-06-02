@@ -49,6 +49,10 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id, err := s.Backend.Create(r.Context(), opts)
+	if errors.Is(err, sandbox.ErrContainerSocketUnavailable) {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

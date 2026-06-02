@@ -40,6 +40,20 @@ Toolchain versions are declared in [`docker/sandbox-tools.toml`](docker/sandbox-
 | `SANDBOX_IMAGE` | Image used for `podman run` (default `sandbox-env:latest`; uses **`--pull never`** so the image must exist locally) |
 | `SANDBOX_PODMAN_BIN` | Podman executable (default `podman`) |
 | `SANDBOX_LISTEN` | Listen address (default `127.0.0.1:8080`) |
+| `SANDBOX_CONTAINER_SOCKET` | Host path for the socket bind-mount (optional). On **macOS**, leave unset: the server uses the in-VM path from **`podman info`** (e.g. `/run/user/UID/podman/podman.sock`). Do **not** set this to the Podman Machine **`-api.sock`** path from `podman machine inspect` — it cannot be mounted into containers. |
+
+### Container socket mount (default on)
+
+By default, every new sandbox mounts the host Podman/Docker API socket at **`/var/run/docker.sock`** and sets **`DOCKER_HOST`** and **`TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE`** so tools (Testcontainers, dockertest, etc.) can start sibling containers on the host.
+
+Disable when not needed:
+
+```json
+POST /v1/sandboxes
+{"mount_container_socket": false}
+```
+
+On **macOS with Podman Machine**, the mount source is the **in-VM** socket from **`podman info`** (not the host `…-api.sock` proxy). That path is not visible on the Mac filesystem but Podman accepts it for `podman run -v`. Tools inside the sandbox may need a **rootful** machine (`podman machine set --rootful`) if you see permission errors on the mounted socket.
 
 ---
 
@@ -59,7 +73,7 @@ Base path: **`/v1`**. Request/response bodies use JSON unless noted.
 
 | Method | Path | Body | Success |
 |--------|------|------|---------|
-| `POST` | `/v1/sandboxes` | `{ }` — [`sandboxclient.CreateOptions`](pkg/sandboxclient/types.go) | **201** JSON `{"sandbox_id":"..."}` |
+| `POST` | `/v1/sandboxes` | [`sandboxclient.CreateOptions`](pkg/sandboxclient/types.go) — **`mount_container_socket`** defaults **true**; set **false** to disable | **201** JSON `{"sandbox_id":"..."}` |
 | `DELETE` | `/v1/sandboxes/{id}` | — | **204** |
 | `POST` | `/v1/sandboxes/{id}/exec` | [`sandboxclient.ExecRequest`](pkg/sandboxclient/types.go) (`command`, optional `opts`) | **200** [`ExecResult`](pkg/sandboxclient/types.go) |
 
@@ -79,7 +93,7 @@ Errors return JSON `{"error":"..."}` with appropriate status (e.g. **404** unkno
 
 The image is **`debian:bookworm-slim`** plus **[mise](https://mise.jdx.dev)** for polyglot toolchains (not a single upstream “batteries-included” base — those images are usually huge and still ship only one Java/Go version).
 
-**Preinstalled (defaults on `PATH`):** Go **1.23.6**, Temurin **26**, Maven **3.9.9**, Gradle **8.12.1**. Also installed for `mise exec`: Go **1.22.12**; Temurin **11**, **17**, **21**, and **24**. Plus **Python 3**, **curl**, **wget**, **git**, **build-essential** (cgo/native builds), CA certs.
+**Preinstalled (defaults on `PATH`):** Go **1.23.6**, Temurin **26**, Maven **3.9.9**, Gradle **9.5.1** ([latest stable](https://gradle.org/releases/) as of image build). Also installed for `mise exec`: Go **1.22.12**; Temurin **11**, **17**, **21**, **24**, and **25**. Plus **Python 3**, **curl**, **wget**, **git**, **build-essential** (cgo/native builds), CA certs.
 
 Installing Java 26 does **not** replace older JDKs — they are installed side by side. Use `java -version` for the default, or `mise exec java@temurin-24.0.0 -- …` / Gradle **toolchains** for per-project versions.
 

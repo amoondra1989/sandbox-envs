@@ -15,11 +15,12 @@ import (
 
 // PodmanSandbox manages containers via the podman CLI.
 type PodmanSandbox struct {
-	Image      string
-	PodmanBin  string
-	RunCmd     Runner
-	mu         sync.RWMutex
-	containers map[string]string // sandboxID -> container name
+	Image           string
+	PodmanBin       string
+	RunCmd          Runner
+	ContainerSocket string // host path to Podman/Docker socket (SANDBOX_CONTAINER_SOCKET); used when MountContainerSocket is enabled
+	mu              sync.RWMutex
+	containers      map[string]string // sandboxID -> container name
 }
 
 func NewPodman(image string, run Runner) *PodmanSandbox {
@@ -38,10 +39,11 @@ func NewPodman(image string, run Runner) *PodmanSandbox {
 		run = ExecRunner{}
 	}
 	return &PodmanSandbox{
-		Image:      image,
-		PodmanBin:  bin,
-		RunCmd:     run,
-		containers: make(map[string]string),
+		Image:           image,
+		PodmanBin:       bin,
+		RunCmd:          run,
+		ContainerSocket: strings.TrimSpace(os.Getenv("SANDBOX_CONTAINER_SOCKET")),
+		containers:      make(map[string]string),
 	}
 }
 
@@ -93,7 +95,7 @@ func (p *PodmanSandbox) unregister(id string) {
 }
 
 // Create implements Sandbox.
-func (p *PodmanSandbox) Create(ctx context.Context, _ sandboxclient.CreateOptions) (string, error) {
+func (p *PodmanSandbox) Create(ctx context.Context, opts sandboxclient.CreateOptions) (string, error) {
 	id, err := randomID()
 	if err != nil {
 		return "", err
@@ -103,9 +105,18 @@ func (p *PodmanSandbox) Create(ctx context.Context, _ sandboxclient.CreateOption
 		"run", "-d",
 		"--pull", "never",
 		"--name", name,
-		p.Image,
-		"sleep", "infinity",
 	}
+	if opts.MountContainerSocketEnabled() {
+		hostSocket, err := p.resolveContainerSocket(ctx)
+		if err != nil {
+			return "", err
+		}
+		if err := validateContainerSocket(hostSocket); err != nil {
+			return "", err
+		}
+		args = append(args, containerSocketRunArgs(hostSocket)...)
+	}
+	args = append(args, p.Image, "sleep", "infinity")
 	stdout, stderr, code, err := p.RunCmd.Run(ctx, p.PodmanBin, args...)
 	if err != nil {
 		return "", fmt.Errorf("podman run: %w (stderr=%q)", err, string(stderr))

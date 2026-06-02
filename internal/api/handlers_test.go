@@ -17,6 +17,7 @@ import (
 )
 
 type stubBackend struct {
+	lastCreate sandboxclient.CreateOptions
 	createID   string
 	createErr  error
 	destroyErr error
@@ -29,6 +30,7 @@ type stubBackend struct {
 }
 
 func (s *stubBackend) Create(ctx context.Context, opts sandboxclient.CreateOptions) (string, error) {
+	s.lastCreate = opts
 	if s.createErr != nil {
 		return "", s.createErr
 	}
@@ -65,6 +67,34 @@ func (s *stubBackend) WriteFile(ctx context.Context, sandboxID string, path stri
 
 func (s *stubBackend) HealthCheck(ctx context.Context, sandboxID string) error {
 	return s.healthErr
+}
+
+func TestHandleCreateMountContainerSocketJSON(t *testing.T) {
+	stub := &stubBackend{createID: "sid"}
+	h := NewServer(stub)
+	body := `{"mount_container_socket":true}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/sandboxes", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if stub.lastCreate.MountContainerSocket == nil || !*stub.lastCreate.MountContainerSocket {
+		t.Fatalf("got %+v", stub.lastCreate)
+	}
+}
+
+func TestHandleCreateContainerSocketUnavailable(t *testing.T) {
+	errCS := fmt.Errorf("%w: no socket", sandbox.ErrContainerSocketUnavailable)
+	h := NewServer(&stubBackend{createErr: errCS})
+	req := httptest.NewRequest(http.MethodPost, "/v1/sandboxes", strings.NewReader(`{"mount_container_socket":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
+	}
 }
 
 func TestHandleCreateDecodeEmptyBody(t *testing.T) {
