@@ -110,7 +110,7 @@ mise exec -- ./gradlew check
 
 ## Integration test support
 
-Host socket mount (read-only): `DOCKER_HOST` and `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE` point at `/var/run/docker.sock`. See README for macOS Podman Machine notes.
+Host socket mount (read-only): `DOCKER_HOST`, `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE`, `TESTCONTAINERS_HOST_OVERRIDE=host.containers.internal`, and `TESTCONTAINERS_RYUK_DISABLED=true`, plus **`--add-host host.containers.internal:host-gateway`**. Without the host override, integration tests often fail with **`Connection to localhost:&lt;port&gt; refused`** because Postgres/Testcontainers siblings listen on the host, not inside the sandbox. The server adds **`--privileged`** by default (`SANDBOX_SOCKET_PRIVILEGED`). **Recreate sandboxes** after server changes.
 
 ## Image build
 

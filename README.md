@@ -47,10 +47,12 @@ Multi-arch (optional): `podman build --platform linux/amd64,linux/arm64 -t sandb
 | `SANDBOX_PODMAN_BIN` | Podman executable (default `podman`) |
 | `SANDBOX_LISTEN` | Listen address (default `127.0.0.1:8080`) |
 | `SANDBOX_CONTAINER_SOCKET` | Host path for the socket bind-mount (optional). On **macOS**, leave unset: the server uses the in-VM path from **`podman info`** (e.g. `/run/user/UID/podman/podman.sock`). Do **not** set this to the Podman Machine **`-api.sock`** path from `podman machine inspect` — it cannot be mounted into containers. |
+| `SANDBOX_SOCKET_PRIVILEGED` | When socket mount is on, add **`--privileged`** to sandbox containers (default **true**). Set **`false`** only for rootful Podman where tests work without it. |
+| `SANDBOX_TESTCONTAINERS_HOST_OVERRIDE` | Hostname for published container ports when tests run inside the sandbox (default **`host.containers.internal`**). |
 
 ### Container socket mount (default on)
 
-By default, every new sandbox mounts the host Podman/Docker API socket at **`/var/run/docker.sock`** and sets **`DOCKER_HOST`** and **`TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE`** so tools (Testcontainers, dockertest, etc.) can start sibling containers on the host.
+By default, every new sandbox mounts the host Podman/Docker API socket at **`/var/run/docker.sock`** and sets **`DOCKER_HOST`**, **`TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE`**, and **`TESTCONTAINERS_HOST_OVERRIDE=host.containers.internal`** (plus **`--add-host …:host-gateway`**) so Testcontainers can start sibling containers on the host and tests inside the sandbox can reach their published ports (not via `localhost`).
 
 Disable when not needed:
 
@@ -59,7 +61,9 @@ POST /v1/sandboxes
 {"mount_container_socket": false}
 ```
 
-On **macOS with Podman Machine**, the mount source is the **in-VM** socket from **`podman info`** (not the host `…-api.sock` proxy). That path is not visible on the Mac filesystem but Podman accepts it for `podman run -v`. Tools inside the sandbox may need a **rootful** machine (`podman machine set --rootful`) if you see permission errors on the mounted socket.
+On **macOS with Podman Machine**, the mount source is the **in-VM** socket from **`podman info`** (not the host `…-api.sock` proxy). Sandboxes with socket mount run **`--privileged`** by default so processes inside the sandbox can use `/var/run/docker.sock` (rootless Podman otherwise returns permission denied). Disable with `SANDBOX_SOCKET_PRIVILEGED=false` only if you use a **rootful** machine and have verified Testcontainers works without it.
+
+Testcontainers also receives **`TESTCONTAINERS_RYUK_DISABLED=true`** (recommended for rootless Podman). After changing socket settings, **recreate sandboxes** (destroy old ones and provision again).
 
 ---
 

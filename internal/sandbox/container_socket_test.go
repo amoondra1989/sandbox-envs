@@ -64,9 +64,14 @@ func TestContainerSocketRunArgs(t *testing.T) {
 	t.Parallel()
 	args := containerSocketRunArgs("/host/podman.sock")
 	want := []string{
+		"--privileged",
+		"--add-host", "host.containers.internal:host-gateway",
+		"--add-host", "host.docker.internal:host-gateway",
 		"-v", "/host/podman.sock:/var/run/docker.sock:ro",
 		"-e", "DOCKER_HOST=unix:///var/run/docker.sock",
 		"-e", "TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock",
+		"-e", "TESTCONTAINERS_HOST_OVERRIDE=host.containers.internal",
+		"-e", "TESTCONTAINERS_RYUK_DISABLED=true",
 	}
 	if len(args) != len(want) {
 		t.Fatalf("got %v", args)

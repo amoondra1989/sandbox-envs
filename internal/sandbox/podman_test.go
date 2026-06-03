@@ -161,6 +161,18 @@ func TestPodmanCreateWithContainerSocket(t *testing.T) {
 	if !strings.Contains(run, "TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock") {
 		t.Fatalf("missing container socket env: %s", run)
 	}
+	if !strings.Contains(run, "TESTCONTAINERS_HOST_OVERRIDE=host.containers.internal") {
+		t.Fatalf("missing host override env: %s", run)
+	}
+	if !strings.Contains(run, "TESTCONTAINERS_RYUK_DISABLED=true") {
+		t.Fatalf("missing Ryuk disable env: %s", run)
+	}
+	if !strings.Contains(run, "host.containers.internal:host-gateway") {
+		t.Fatalf("missing host-gateway add-host: %s", run)
+	}
+	if !strings.Contains(run, "--privileged") {
+		t.Fatalf("missing --privileged for socket access: %s", run)
+	}
 }
 
 func TestPodmanCreateContainerSocketRequiresSocket(t *testing.T) {

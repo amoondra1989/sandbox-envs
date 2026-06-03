@@ -15,12 +15,49 @@ var ErrContainerSocketUnavailable = errors.New("container socket unavailable")
 // In-container path where the host Podman/Docker API socket is mounted (Docker-compatible API).
 const containerSocketMountTarget = "/var/run/docker.sock"
 
-func containerSocketRunArgs(hostSocket string) []string {
-	return []string{
-		"-v", hostSocket + ":" + containerSocketMountTarget + ":ro",
-		"-e", "DOCKER_HOST=unix://" + containerSocketMountTarget,
-		"-e", "TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=" + containerSocketMountTarget,
+// Default hostname for published ports when tests run inside the sandbox (not on the host).
+// Testcontainers starts sibling containers on the host; JDBC URLs must not use localhost.
+const defaultTestcontainersHostOverride = "host.containers.internal"
+
+func testcontainersHostOverride() string {
+	if v := strings.TrimSpace(os.Getenv("SANDBOX_TESTCONTAINERS_HOST_OVERRIDE")); v != "" {
+		return v
 	}
+	return defaultTestcontainersHostOverride
+}
+
+func containerSocketRunArgs(hostSocket string) []string {
+	hostOverride := testcontainersHostOverride()
+	var out []string
+	if socketPrivilegedEnabled() {
+		out = append(out, "--privileged")
+	}
+	// Reach host-published ports from inside the sandbox (Podman + Docker Desktop).
+	out = append(out,
+		"--add-host", "host.containers.internal:host-gateway",
+		"--add-host", "host.docker.internal:host-gateway",
+	)
+	out = append(out,
+		"-v", hostSocket+":"+containerSocketMountTarget+":ro",
+		"-e", "DOCKER_HOST=unix://"+containerSocketMountTarget,
+		"-e", "TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE="+containerSocketMountTarget,
+		"-e", "TESTCONTAINERS_HOST_OVERRIDE="+hostOverride,
+		// Rootless Podman: Ryuk often cannot run; required for Testcontainers with socket mount.
+		"-e", "TESTCONTAINERS_RYUK_DISABLED=true",
+	)
+	return out
+}
+
+// socketPrivilegedEnabled reports whether sandboxes with a mounted socket should run privileged.
+// Rootless Podman sockets are not usable from an unprivileged nested container (permission denied on
+// /var/run/docker.sock). Set SANDBOX_SOCKET_PRIVILEGED=false when using a rootful machine/socket
+// and you want to avoid --privileged.
+func socketPrivilegedEnabled() bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("SANDBOX_SOCKET_PRIVILEGED")))
+	if v == "0" || v == "false" || v == "no" {
+		return false
+	}
+	return true
 }
 
 func normalizeSocketPath(path string) string {
