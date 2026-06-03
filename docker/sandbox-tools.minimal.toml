@@ -1,0 +1,14 @@
+# Slim image: one default per language. Other versions via mise install / mise exec at runtime.
+# Build: podman build -t sandbox-env:latest .
+# Full bake: podman build --build-arg SANDBOX_PROFILE=full -t sandbox-env:full .
+
+[tools]
+go = "1.26.3"
+java = "temurin-26.0.0"
+node = "24.16.0"
+python = "3.12.10"
+maven = "3.9.9"
+gradle = "9.5.1"
+uv = "latest"
+pnpm = "10.11.0"
+yarn = "4.9.2"

@@ -25,13 +25,19 @@ Sandbox IDs and container mappings live **only in process memory**. Restarting t
 
 ### 1. Build the sandbox runtime image
 
-From the repo root (downloads Go/Java/Maven/Gradle via [mise](https://mise.jdx.dev); needs network):
+From the repo root (downloads toolchains via [mise](https://mise.jdx.dev); needs network):
 
 ```bash
+# Slim (default): one runtime per language — smaller image; other versions via mise at runtime
 podman build -t sandbox-env:latest .
+
+# Full: multiple Go/Java/Node/Python versions pre-installed — faster, ~4 GB (vs ~1.8 GB slim on arm64)
+podman build --build-arg SANDBOX_PROFILE=full -t sandbox-env:full .
 ```
 
-Toolchain versions are declared in [`docker/sandbox-tools.toml`](docker/sandbox-tools.toml). Edit that file and rebuild to add or bump versions.
+Versions live in [`docker/sandbox-tools.minimal.toml`](docker/sandbox-tools.minimal.toml) and [`docker/sandbox-tools.full.toml`](docker/sandbox-tools.full.toml). See [`docs/sandbox-image.md`](docs/sandbox-image.md) for profiles, on-demand install, and integration tests.
+
+Multi-arch (optional): `podman build --platform linux/amd64,linux/arm64 -t sandbox-env:latest .`
 
 ### 2. (Optional) Override image or Podman binary
 
@@ -91,23 +97,29 @@ Errors return JSON `{"error":"..."}` with appropriate status (e.g. **404** unkno
 
 ## Capabilities inside the sandbox
 
-The image is **`debian:bookworm-slim`** plus **[mise](https://mise.jdx.dev)** for polyglot toolchains (not a single upstream “batteries-included” base — those images are usually huge and still ship only one Java/Go version).
+The image is **`debian:bookworm-slim`** plus **[mise](https://mise.jdx.dev)** for polyglot runtimes and build tools. Full design: [`docs/sandbox-image.md`](docs/sandbox-image.md).
 
-**Preinstalled (defaults on `PATH`):** Go **1.23.6**, Temurin **26**, Maven **3.9.9**, Gradle **9.5.1** ([latest stable](https://gradle.org/releases/) as of image build). Also installed for `mise exec`: Go **1.22.12**; Temurin **11**, **17**, **21**, **24**, and **25**. Plus **Python 3**, **curl**, **wget**, **git**, **build-essential** (cgo/native builds), CA certs.
+**Default image (`sandbox-env:latest`, slim profile)** — one version per language on `PATH`:
 
-Installing Java 26 does **not** replace older JDKs — they are installed side by side. Use `java -version` for the default, or `mise exec java@temurin-24.0.0 -- …` / Gradle **toolchains** for per-project versions.
+Go **1.26.3**, Temurin **26**, Node **24.16.0**, Python **3.12.10**, Maven **3.9.9**, Gradle **9.5.1**, **uv**, **poetry** (pip), **pnpm**, **yarn**, **npm**.
 
-**Use a different Go/Java version in one exec** (no image rebuild):
+Other versions are **not** baked in; install on demand (needs network, cached under `/opt/mise` for the life of the sandbox):
 
 ```bash
-# via API / sandboxclient — command examples inside the container:
-mise exec go@1.22.12 -- go test ./...
-mise exec java@temurin-17.0.14 -- mvn -q test
+mise exec go@1.25.8 -- go test ./...
+mise exec java@temurin-21.0.6 -- mvn -q test
+mise install node@22.22.3
 ```
 
-Projects with **`.mise.toml`** / **`./gradlew`** / **`./mvnw`** can pin versions in-repo; mise will respect project config when run from that directory.
+After clone, agents can run **`mise install`** in the repo when a `.mise.toml` exists.
 
-Rebuild after changing [`Dockerfile`](Dockerfile) or [`docker/sandbox-tools.toml`](docker/sandbox-tools.toml).
+**Full profile (`sandbox-env:full`)** — also preinstalls Go 1.24/1.25, Java 21/24/25, Node 22/26, Python 3.11/3.13, Gradle 8.14.3 (larger image, no download for those versions).
+
+**System packages:** git, curl, wget, jq, unzip, zip, make, gcc, g++, build-essential, openssh-client, rsync, tar, bash, CA certs, pkg-config, libssl-dev.
+
+**Integration tests:** host socket at `/var/run/docker.sock` (default on create). See [Container socket mount](#container-socket-mount-default-on) and `docs/sandbox-image.md`.
+
+Rebuild after changing [`Dockerfile`](Dockerfile) or `docker/sandbox-tools.*.toml`.
 
 ---
 
@@ -142,7 +154,7 @@ func main() {
 	}
 	defer func() { _ = c.Destroy(ctx, id) }()
 
-	res, err := c.Exec(ctx, id, `python3 -c "print(1+1)"`, sandboxclient.ExecOptions{})
+	res, err := c.Exec(ctx, id, `python -c "print(1+1)"`, sandboxclient.ExecOptions{})
 	if err != nil {
 		panic(err)
 	}
@@ -171,7 +183,7 @@ curl -sS -X POST http://127.0.0.1:8080/v1/sandboxes -H 'Content-Type: applicatio
 # use returned sandbox_id:
 curl -sS -X POST http://127.0.0.1:8080/v1/sandboxes/$SID/exec \
   -H 'Content-Type: application/json' \
-  -d '{"command":"python3 -c \"print(\\\"hi\\\")\"","opts":{}}'
+  -d '{"command":"python -c \"print(\\\"hi\\\")\"","opts":{}}'
 curl -sS -X DELETE http://127.0.0.1:8080/v1/sandboxes/$SID
 ```
 
@@ -199,8 +211,11 @@ Without `SANDBOX_INTEGRATION=1`, that test **skips**. Without `-tags=integration
 | Path | Role |
 |------|------|
 | `cmd/server` | HTTP server entrypoint |
+| `docker/` | mise config (`sandbox-tools.minimal.toml`, `sandbox-tools.full.toml`, `mise-settings.toml`) |
+| `docs/sandbox-image.md` | Agent image design, versions, integration tests |
 | `internal/api` | REST handlers |
 | `internal/sandbox` | Domain + Podman CLI adapter |
 | `pkg/sandboxclient` | **Stable import path** — HTTP client + JSON DTOs |
+| `specs/sandbox-agent-image.md` | Image feature spec |
 
 `pkg/` must not import `internal/` so downstream modules only depend on the published surface.

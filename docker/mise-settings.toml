@@ -1,0 +1,5 @@
+# Mise settings for the sandbox image (/etc/mise/settings.toml).
+# Agents may add project .mise.toml under /workspace; /etc/mise is trusted.
+
+[settings]
+experimental = true

@@ -67,7 +67,7 @@ func TestIntegration_ClientPodman(t *testing.T) {
 		t.Fatalf("ReadFile content mismatch:\nwant %q\ngot  %q", script, gotFile)
 	}
 
-	res, err := client.Exec(ctx, id, "python3 integration_client_test.py", sandboxclient.ExecOptions{Cwd: "/workspace"})
+	res, err := client.Exec(ctx, id, "python integration_client_test.py", sandboxclient.ExecOptions{Cwd: "/workspace"})
 	if err != nil {
 		t.Fatalf("Exec: %v", err)
 	}
